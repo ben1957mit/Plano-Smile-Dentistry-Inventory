@@ -1,17 +1,11 @@
-"""
-Inventory Management System for Plano Smile Dentistry
-Features:
-- Up to 1000 SKUs
-- Barcode-based lookup (works with keyboard-wedge barcode scanners or manual entry)
-- Decrement inventory (e.g., when items are used)
-- Min/Max levels per SKU
-- Category filters:
-  PPE, Restorative, Hygiene, Anesthetics, Disposable, Imaging,
-  Instruments, Orthodontics, Endodontics, Other
-"""
+import streamlit as st
+import pandas as pd
+import uuid
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+# -----------------------------
+# CONFIG
+# -----------------------------
+st.set_page_config(page_title="Plano Smile Dentistry Inventory", layout="wide")
 
 CATEGORIES = [
     "PPE",
@@ -26,272 +20,204 @@ CATEGORIES = [
     "Other",
 ]
 
-
-@dataclass
-class InventoryItem:
-    sku: str
-    name: str
-    barcode: str
-    category: str
-    quantity: int
-    min_level: int
-    max_level: int
-
-    def is_below_min(self) -> bool:
-        return self.quantity < self.min_level
-
-    def is_above_max(self) -> bool:
-        return self.quantity > self.max_level
+DATA_FILE = "inventory.csv"
 
 
-@dataclass
-class InventorySystem:
-    office_name: str = "Plano Smile Dentistry"
-    items: Dict[str, InventoryItem] = field(default_factory=dict)  # key: sku
-
-    def add_item(
-        self,
-        sku: str,
-        name: str,
-        barcode: str,
-        category: str,
-        quantity: int,
-        min_level: int,
-        max_level: int,
-    ) -> None:
-        if len(self.items) >= 1000:
-            print("Inventory limit reached (1000 SKUs). Cannot add more items.")
-            return
-
-        if category not in CATEGORIES:
-            print(f"Invalid category. Must be one of: {', '.join(CATEGORIES)}")
-            return
-
-        if sku in self.items:
-            print(f"SKU {sku} already exists. Use update_item to modify.")
-            return
-
-        self.items[sku] = InventoryItem(
-            sku=sku,
-            name=name,
-            barcode=barcode,
-            category=category,
-            quantity=quantity,
-            min_level=min_level,
-            max_level=max_level,
-        )
-        print(f"Item {name} (SKU: {sku}) added to inventory.")
-
-    def update_item(
-        self,
-        sku: str,
-        name: Optional[str] = None,
-        barcode: Optional[str] = None,
-        category: Optional[str] = None,
-        quantity: Optional[int] = None,
-        min_level: Optional[int] = None,
-        max_level: Optional[int] = None,
-    ) -> None:
-        item = self.items.get(sku)
-        if not item:
-            print(f"SKU {sku} not found.")
-            return
-
-        if name is not None:
-            item.name = name
-        if barcode is not None:
-            item.barcode = barcode
-        if category is not None:
-            if category not in CATEGORIES:
-                print(f"Invalid category. Must be one of: {', '.join(CATEGORIES)}")
-                return
-            item.category = category
-        if quantity is not None:
-            item.quantity = quantity
-        if min_level is not None:
-            item.min_level = min_level
-        if max_level is not None:
-            item.max_level = max_level
-
-        print(f"Item {sku} updated.")
-
-    def decrement_inventory(self, sku: str, amount: int = 1) -> None:
-        item = self.items.get(sku)
-        if not item:
-            print(f"SKU {sku} not found.")
-            return
-
-        if amount <= 0:
-            print("Decrement amount must be positive.")
-            return
-
-        if item.quantity < amount:
-            print(
-                f"Not enough quantity to decrement. Current: {item.quantity}, requested: {amount}"
-            )
-            return
-
-        item.quantity -= amount
-        print(
-            f"Decremented {amount} from SKU {sku}. New quantity: {item.quantity}"
+# -----------------------------
+# LOAD / SAVE DATA
+# -----------------------------
+def load_inventory():
+    try:
+        return pd.read_csv(DATA_FILE)
+    except FileNotFoundError:
+        return pd.DataFrame(
+            columns=[
+                "sku",
+                "name",
+                "barcode",
+                "category",
+                "quantity",
+                "min_level",
+                "max_level",
+            ]
         )
 
-        if item.is_below_min():
-            print(
-                f"WARNING: SKU {sku} is below minimum level ({item.quantity} < {item.min_level})."
-            )
 
-    def find_by_barcode(self, barcode: str) -> Optional[InventoryItem]:
-        for item in self.items.values():
-            if item.barcode == barcode:
-                return item
-        return None
-
-    def find_by_sku(self, sku: str) -> Optional[InventoryItem]:
-        return self.items.get(sku)
-
-    def filter_by_category(self, category: str) -> List[InventoryItem]:
-        if category not in CATEGORIES:
-            print(f"Invalid category. Must be one of: {', '.join(CATEGORIES)}")
-            return []
-        return [item for item in self.items.values() if item.category == category]
-
-    def list_low_stock(self) -> List[InventoryItem]:
-        return [item for item in self.items.values() if item.is_below_min()]
-
-    def list_overstock(self) -> List[InventoryItem]:
-        return [item for item in self.items.values() if item.is_above_max()]
-
-    def display_item(self, item: InventoryItem) -> None:
-        print(
-            f"SKU: {item.sku}\n"
-            f"Name: {item.name}\n"
-            f"Barcode: {item.barcode}\n"
-            f"Category: {item.category}\n"
-            f"Quantity: {item.quantity}\n"
-            f"Min Level: {item.min_level}\n"
-            f"Max Level: {item.max_level}\n"
-            f"Below Min: {item.is_below_min()}\n"
-            f"Above Max: {item.is_above_max()}\n"
-        )
-
-    def display_inventory_summary(self) -> None:
-        print(f"Inventory Summary - {self.office_name}")
-        print(f"Total SKUs: {len(self.items)}")
-        for category in CATEGORIES:
-            count = len(self.filter_by_category(category))
-            print(f"{category}: {count} items")
+def save_inventory(df):
+    df.to_csv(DATA_FILE, index=False)
 
 
-def main():
-    inv = InventorySystem()
+inventory = load_inventory()
 
-    while True:
-        print("\n--- Plano Smile Dentistry Inventory ---")
-        print("1. Add Item")
-        print("2. Update Item")
-        print("3. Decrement Inventory (by SKU)")
-        print("4. Lookup by Barcode (scan or type)")
-        print("5. Lookup by SKU")
-        print("6. Filter by Category")
-        print("7. List Low Stock")
-        print("8. List Overstock")
-        print("9. Inventory Summary")
-        print("0. Exit")
 
-        choice = input("Select an option: ").strip()
+# -----------------------------
+# HEADER
+# -----------------------------
+st.title("Plano Smile Dentistry — Inventory Management System")
+st.subheader("Barcode scanning, min/max alerts, category filters, and 1000 SKU capacity.")
 
-        if choice == "1":
-            sku = input("SKU: ").strip()
-            name = input("Name: ").strip()
-            barcode = input("Barcode (scan or type): ").strip()
-            print(f"Categories: {', '.join(CATEGORIES)}")
-            category = input("Category: ").strip()
-            quantity = int(input("Quantity: ").strip())
-            min_level = int(input("Min Level: ").strip())
-            max_level = int(input("Max Level: ").strip())
-            inv.add_item(sku, name, barcode, category, quantity, min_level, max_level)
 
-        elif choice == "2":
-            sku = input("SKU to update: ").strip()
-            print("Leave fields blank to keep current value.")
-            name = input("New Name (optional): ").strip()
-            barcode = input("New Barcode (optional): ").strip()
-            category = input("New Category (optional): ").strip()
-            quantity = input("New Quantity (optional): ").strip()
-            min_level = input("New Min Level (optional): ").strip()
-            max_level = input("New Max Level (optional): ").strip()
+# -----------------------------
+# SIDEBAR NAVIGATION
+# -----------------------------
+page = st.sidebar.radio(
+    "Navigation",
+    [
+        "Add Item",
+        "Lookup / Scan",
+        "Decrement Inventory",
+        "Category Filter",
+        "Low Stock",
+        "Overstock",
+        "Inventory Table",
+        "Summary Dashboard",
+    ],
+)
 
-            inv.update_item(
-                sku,
-                name=name or None,
-                barcode=barcode or None,
-                category=category or None,
-                quantity=int(quantity) if quantity else None,
-                min_level=int(min_level) if min_level else None,
-                max_level=int(max_level) if max_level else None,
-            )
 
-        elif choice == "3":
-            sku = input("SKU to decrement: ").strip()
-            amount_str = input("Amount to decrement (default 1): ").strip()
-            amount = int(amount_str) if amount_str else 1
-            inv.decrement_inventory(sku, amount)
+# -----------------------------
+# ADD ITEM
+# -----------------------------
+if page == "Add Item":
+    st.header("Add New Inventory Item")
 
-        elif choice == "4":
-            barcode = input("Scan or enter barcode: ").strip()
-            item = inv.find_by_barcode(barcode)
-            if item:
-                inv.display_item(item)
-            else:
-                print("No item found with that barcode.")
+    sku = st.text_input("SKU (auto-generate if left blank)")
+    name = st.text_input("Item Name")
+    barcode = st.text_input("Barcode (scan or type)")
+    category = st.selectbox("Category", CATEGORIES)
+    quantity = st.number_input("Quantity", min_value=0, step=1)
+    min_level = st.number_input("Minimum Level", min_value=0, step=1)
+    max_level = st.number_input("Maximum Level", min_value=0, step=1)
 
-        elif choice == "5":
-            sku = input("Enter SKU: ").strip()
-            item = inv.find_by_sku(sku)
-            if item:
-                inv.display_item(item)
-            else:
-                print("SKU not found.")
-
-        elif choice == "6":
-            print(f"Categories: {', '.join(CATEGORIES)}")
-            category = input("Category to filter: ").strip()
-            items = inv.filter_by_category(category)
-            if not items:
-                print("No items found for that category.")
-            else:
-                for item in items:
-                    inv.display_item(item)
-
-        elif choice == "7":
-            low_stock_items = inv.list_low_stock()
-            if not low_stock_items:
-                print("No items below minimum level.")
-            else:
-                print("Items below minimum level:")
-                for item in low_stock_items:
-                    inv.display_item(item)
-
-        elif choice == "8":
-            overstock_items = inv.list_overstock()
-            if not overstock_items:
-                print("No items above maximum level.")
-            else:
-                print("Items above maximum level:")
-                for item in overstock_items:
-                    inv.display_item(item)
-
-        elif choice == "9":
-            inv.display_inventory_summary()
-
-        elif choice == "0":
-            print("Exiting Plano Smile Dentistry Inventory System.")
-            break
-
+    if st.button("Add Item"):
+        if len(inventory) >= 1000:
+            st.error("Inventory limit reached (1000 SKUs).")
         else:
-            print("Invalid option. Please try again.")
+            if sku.strip() == "":
+                sku = str(uuid.uuid4())[:8]
+
+            new_row = pd.DataFrame(
+                [
+                    {
+                        "sku": sku,
+                        "name": name,
+                        "barcode": barcode,
+                        "category": category,
+                        "quantity": quantity,
+                        "min_level": min_level,
+                        "max_level": max_level,
+                    }
+                ]
+            )
+
+            inventory = pd.concat([inventory, new_row], ignore_index=True)
+            save_inventory(inventory)
+            st.success(f"Item '{name}' added successfully.")
 
 
-if __name__ == "__main__":
-    main()
+# -----------------------------
+# LOOKUP / SCAN
+# -----------------------------
+elif page == "Lookup / Scan":
+    st.header("Lookup Item by Barcode or SKU")
+
+    lookup_value = st.text_input("Scan barcode or enter SKU")
+
+    if st.button("Search"):
+        result = inventory[
+            (inventory["barcode"] == lookup_value)
+            | (inventory["sku"] == lookup_value)
+        ]
+
+        if result.empty:
+            st.error("No item found.")
+        else:
+            st.success("Item found:")
+            st.dataframe(result)
+
+
+# -----------------------------
+# DECREMENT INVENTORY
+# -----------------------------
+elif page == "Decrement Inventory":
+    st.header("Decrement Inventory")
+
+    sku = st.text_input("Enter SKU")
+    amount = st.number_input("Amount to decrement", min_value=1, step=1)
+
+    if st.button("Apply Decrement"):
+        if sku not in inventory["sku"].values:
+            st.error("SKU not found.")
+        else:
+            idx = inventory[inventory["sku"] == sku].index[0]
+            current_qty = inventory.at[idx, "quantity"]
+
+            if current_qty < amount:
+                st.error(f"Not enough quantity. Current: {current_qty}")
+            else:
+                inventory.at[idx, "quantity"] = current_qty - amount
+                save_inventory(inventory)
+                st.success(f"New quantity: {current_qty - amount}")
+
+                if inventory.at[idx, "quantity"] < inventory.at[idx, "min_level"]:
+                    st.warning("⚠ Item is now below minimum level!")
+
+
+# -----------------------------
+# CATEGORY FILTER
+# -----------------------------
+elif page == "Category Filter":
+    st.header("Filter by Category")
+
+    category = st.selectbox("Select Category", CATEGORIES)
+    filtered = inventory[inventory["category"] == category]
+
+    st.write(f"Items in category: **{category}**")
+    st.dataframe(filtered)
+
+
+# -----------------------------
+# LOW STOCK
+# -----------------------------
+elif page == "Low Stock":
+    st.header("Items Below Minimum Level")
+
+    low = inventory[inventory["quantity"] < inventory["min_level"]]
+    st.dataframe(low)
+
+
+# -----------------------------
+# OVERSTOCK
+# -----------------------------
+elif page == "Overstock":
+    st.header("Items Above Maximum Level")
+
+    over = inventory[inventory["quantity"] > inventory["max_level"]]
+    st.dataframe(over)
+
+
+# -----------------------------
+# FULL INVENTORY TABLE
+# -----------------------------
+elif page == "Inventory Table":
+    st.header("Full Inventory Table")
+    st.dataframe(inventory)
+
+
+# -----------------------------
+# SUMMARY DASHBOARD
+# -----------------------------
+elif page == "Summary Dashboard":
+    st.header("Inventory Summary Dashboard")
+
+    total_skus = len(inventory)
+    low_stock = len(inventory[inventory["quantity"] < inventory["min_level"]])
+    overstock = len(inventory[inventory["quantity"] > inventory["max_level"]])
+
+    st.metric("Total SKUs", total_skus)
+    st.metric("Low Stock Items", low_stock)
+    st.metric("Overstock Items", overstock)
+
+    st.subheader("Category Breakdown")
+    category_counts = inventory["category"].value_counts()
+    st.bar_chart(category_counts)
