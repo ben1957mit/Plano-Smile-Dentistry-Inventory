@@ -71,7 +71,7 @@ receiving = load_receiving()
 # HEADER
 # -----------------------------
 st.title("Plano Smile Dentistry — Inventory Management System")
-st.subheader("Receiving log, barcode scanning, min/max alerts, and full SKU tracking.")
+st.subheader("Receiving log, barcode scanning, min/max alerts, duplicate removal, and full SKU tracking.")
 
 
 # -----------------------------
@@ -89,6 +89,7 @@ page = st.sidebar.radio(
         "Overstock",
         "Inventory Table",
         "Receiving Log",
+        "Remove Duplicates",
         "Summary Dashboard",
     ],
 )
@@ -248,26 +249,4 @@ elif page == "Inventory Table":
 
 # -----------------------------
 # RECEIVING LOG
-# -----------------------------
-elif page == "Receiving Log":
-    st.header("Receiving Log — All Inventory Received")
-    st.dataframe(receiving)
-
-
-# -----------------------------
-# SUMMARY DASHBOARD
-# -----------------------------
-elif page == "Summary Dashboard":
-    st.header("Inventory Summary Dashboard")
-
-    total_skus = len(inventory)
-    low_stock = len(inventory[inventory["total_quantity"] < inventory["min_level"]])
-    overstock = len(inventory[inventory["total_quantity"] > inventory["max_level"]])
-
-    st.metric("Total SKUs", total_skus)
-    st.metric("Low Stock Items", low_stock)
-    st.metric("Overstock Items", overstock)
-
-    st.subheader("Category Breakdown")
-    category_counts = inventory["category"].value_counts()
-    st.bar_chart(category_counts)
+# ----------------
