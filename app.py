@@ -22,15 +22,33 @@ RECEIVING_FILE = "receiving.csv"
 # -----------------------------
 def load_inventory():
     try:
-        return pd.read_csv(INVENTORY_FILE)
+        df = pd.read_csv(INVENTORY_FILE)
+
+        # Auto-convert old CSVs (fixes KeyError)
+        if "quantity" in df.columns and "total_quantity" not in df.columns:
+            df["total_quantity"] = df["quantity"]
+            df.drop(columns=["quantity"], inplace=True)
+
+        required_cols = [
+            "sku", "name", "barcode", "category",
+            "total_quantity", "min_level", "max_level"
+        ]
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = 0
+
+        return df
+
     except FileNotFoundError:
         return pd.DataFrame(columns=[
             "sku", "name", "barcode", "category",
             "total_quantity", "min_level", "max_level"
         ])
 
+
 def save_inventory(df):
     df.to_csv(INVENTORY_FILE, index=False)
+
 
 def load_receiving():
     try:
@@ -39,6 +57,7 @@ def load_receiving():
         return pd.DataFrame(columns=[
             "item_number", "sku", "date_received", "qty_received"
         ])
+
 
 def save_receiving(df):
     df.to_csv(RECEIVING_FILE, index=False)
@@ -120,7 +139,6 @@ elif page == "Receive Inventory":
         if sku not in inventory["sku"].values:
             st.error("SKU not found in master inventory.")
         else:
-            # Create receiving entry
             item_number = len(receiving) + 1
             date_received = datetime.now().strftime("%Y-%m-%d")
 
@@ -134,7 +152,6 @@ elif page == "Receive Inventory":
             receiving = pd.concat([receiving, new_receipt], ignore_index=True)
             save_receiving(receiving)
 
-            # Update inventory total
             idx = inventory[inventory["sku"] == sku].index[0]
             inventory.at[idx, "total_quantity"] += qty_received
             save_inventory(inventory)
@@ -173,84 +190,3 @@ elif page == "Use Inventory":
     qty_used = st.number_input("Quantity Used", min_value=1, step=1)
 
     if st.button("Apply Usage"):
-        if sku not in inventory["sku"].values:
-            st.error("SKU not found.")
-        else:
-            idx = inventory[inventory["sku"] == sku].index[0]
-            current_qty = inventory.at[idx, "total_quantity"]
-
-            if qty_used > current_qty:
-                st.error("Not enough inventory to decrement.")
-            else:
-                inventory.at[idx, "total_quantity"] = current_qty - qty_used
-                save_inventory(inventory)
-                st.success(f"New quantity: {current_qty - qty_used}")
-
-                if inventory.at[idx, "total_quantity"] < inventory.at[idx, "min_level"]:
-                    st.warning("⚠ Item is now below minimum level!")
-
-
-# -----------------------------
-# CATEGORY FILTER
-# -----------------------------
-elif page == "Category Filter":
-    st.header("Filter by Category")
-
-    category = st.selectbox("Select Category", CATEGORIES)
-    filtered = inventory[inventory["category"] == category]
-
-    st.write(f"Items in category: **{category}**")
-    st.dataframe(filtered)
-
-
-# -----------------------------
-# LOW STOCK
-# -----------------------------
-elif page == "Low Stock":
-    st.header("Items Below Minimum Level")
-    low = inventory[inventory["total_quantity"] < inventory["min_level"]]
-    st.dataframe(low)
-
-
-# -----------------------------
-# OVERSTOCK
-# -----------------------------
-elif page == "Overstock":
-    st.header("Items Above Maximum Level")
-    over = inventory[inventory["total_quantity"] > inventory["max_level"]]
-    st.dataframe(over)
-
-
-# -----------------------------
-# INVENTORY TABLE
-# -----------------------------
-elif page == "Inventory Table":
-    st.header("Full Inventory Table")
-    st.dataframe(inventory)
-
-
-# -----------------------------
-# RECEIVING LOG
-# -----------------------------
-elif page == "Receiving Log":
-    st.header("Receiving Log — All Inventory Received")
-    st.dataframe(receiving)
-
-
-# -----------------------------
-# SUMMARY DASHBOARD
-# -----------------------------
-elif page == "Summary Dashboard":
-    st.header("Inventory Summary Dashboard")
-
-    total_skus = len(inventory)
-    low_stock = len(inventory[inventory["total_quantity"] < inventory["min_level"]])
-    overstock = len(inventory[inventory["total_quantity"] > inventory["max_level"]])
-
-    st.metric("Total SKUs", total_skus)
-    st.metric("Low Stock Items", low_stock)
-    st.metric("Overstock Items", overstock)
-
-    st.subheader("Category Breakdown")
-    category_counts = inventory["category"].value_counts()
-    st.bar_chart(category_counts)
