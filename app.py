@@ -1,22 +1,36 @@
 import streamlit as st
 import pandas as pd
+import uuid
 from datetime import datetime
 
-INVENTORY_FILE = "inventory_master.csv"
-RECEIVING_FILE = "inventory_receiving.csv"
-USAGE_FILE = "inventory_usage.csv"
+# -----------------------------
+# CONFIG
+# -----------------------------
+st.set_page_config(page_title="Plano Smile Dentistry Inventory", layout="wide")
 
-# ---------------------------------------------------------
-# Load or initialize CSV files
-# ---------------------------------------------------------
+CATEGORIES = [
+    "PPE", "Restorative", "Hygiene", "Anesthetics", "Disposable",
+    "Imaging", "Instruments", "Orthodontics", "Endodontics", "Other"
+]
+
+INVENTORY_FILE = "inventory.csv"
+RECEIVING_FILE = "receiving.csv"
+
+
+# -----------------------------
+# LOAD / SAVE DATA
+# -----------------------------
 def load_inventory():
     try:
         return pd.read_csv(INVENTORY_FILE)
     except FileNotFoundError:
         return pd.DataFrame(columns=[
-            "sku", "item_name", "category",
+            "sku", "name", "barcode", "category",
             "total_quantity", "min_level", "max_level"
         ])
+
+def save_inventory(df):
+    df.to_csv(INVENTORY_FILE, index=False)
 
 def load_receiving():
     try:
@@ -26,196 +40,217 @@ def load_receiving():
             "item_number", "sku", "date_received", "qty_received"
         ])
 
-def load_usage():
-    try:
-        return pd.read_csv(USAGE_FILE)
-    except FileNotFoundError:
-        return pd.DataFrame(columns=[
-            "usage_id", "sku", "date_used", "qty_used"
-        ])
-
-def save_inventory(df):
-    df.to_csv(INVENTORY_FILE, index=False)
-
 def save_receiving(df):
     df.to_csv(RECEIVING_FILE, index=False)
 
-def save_usage(df):
-    df.to_csv(USAGE_FILE, index=False)
 
-# ---------------------------------------------------------
-# Add new SKU
-# ---------------------------------------------------------
-def add_new_sku(sku, item_name, category, min_level, max_level):
-    inventory = load_inventory()
-    if sku in inventory["sku"].values:
-        return False, "SKU already exists."
+inventory = load_inventory()
+receiving = load_receiving()
 
-    new_item = pd.DataFrame([{
-        "sku": sku,
-        "item_name": item_name,
-        "category": category,
-        "total_quantity": 0,
-        "min_level": min_level,
-        "max_level": max_level
-    }])
 
-    inventory = pd.concat([inventory, new_item], ignore_index=True)
-    save_inventory(inventory)
-    return True, f"New SKU {sku} added."
+# -----------------------------
+# HEADER
+# -----------------------------
+st.title("Plano Smile Dentistry — Inventory Management System")
+st.subheader("Receiving log, barcode scanning, min/max alerts, and full SKU tracking.")
 
-# ---------------------------------------------------------
-# Receive inventory
-# ---------------------------------------------------------
-def receive_inventory(sku, qty_received):
-    inventory = load_inventory()
-    receiving = load_receiving()
 
-    if sku not in inventory["sku"].values:
-        return False, "SKU not found."
-
-    item_number = len(receiving) + 1
-    date_received = datetime.now().strftime("%Y-%m-%d")
-
-    new_receipt = pd.DataFrame([{
-        "item_number": item_number,
-        "sku": sku,
-        "date_received": date_received,
-        "qty_received": qty_received
-    }])
-
-    receiving = pd.concat([receiving, new_receipt], ignore_index=True)
-    save_receiving(receiving)
-
-    idx = inventory[inventory["sku"] == sku].index[0]
-    inventory.at[idx, "total_quantity"] += qty_received
-    save_inventory(inventory)
-
-    return True, f"Received {qty_received} units for SKU {sku}."
-
-# ---------------------------------------------------------
-# Use inventory
-# ---------------------------------------------------------
-def use_inventory(sku, qty_used):
-    inventory = load_inventory()
-    usage = load_usage()
-
-    if sku not in inventory["sku"].values:
-        return False, "SKU not found."
-
-    idx = inventory[inventory["sku"] == sku].index[0]
-    current_qty = inventory.at[idx, "total_quantity"]
-
-    if qty_used > current_qty:
-        return False, "Not enough inventory."
-
-    usage_id = len(usage) + 1
-    date_used = datetime.now().strftime("%Y-%m-%d")
-
-    new_usage = pd.DataFrame([{
-        "usage_id": usage_id,
-        "sku": sku,
-        "date_used": date_used,
-        "qty_used": qty_used
-    }])
-
-    usage = pd.concat([usage, new_usage], ignore_index=True)
-    save_usage(usage)
-
-    inventory.at[idx, "total_quantity"] = current_qty - qty_used
-    save_inventory(inventory)
-
-    return True, f"Used {qty_used} units of SKU {sku}."
-
-# ---------------------------------------------------------
-# STREAMLIT UI
-# ---------------------------------------------------------
-st.title("Plano Smile Dentistry — Inventory System")
-
-menu = st.sidebar.selectbox(
+# -----------------------------
+# SIDEBAR NAVIGATION
+# -----------------------------
+page = st.sidebar.radio(
     "Navigation",
-    ["View Inventory", "Add New SKU", "Receive Inventory", "Use Inventory",
-     "Receiving Log", "Usage Log", "Barcode Scan Mode"]
+    [
+        "Add New SKU",
+        "Receive Inventory",
+        "Lookup / Scan",
+        "Use Inventory",
+        "Category Filter",
+        "Low Stock",
+        "Overstock",
+        "Inventory Table",
+        "Receiving Log",
+        "Summary Dashboard",
+    ],
 )
 
-# ---------------------------------------------------------
-# View Inventory
-# ---------------------------------------------------------
-if menu == "View Inventory":
-    st.header("Current Inventory")
-    st.dataframe(load_inventory())
 
-# ---------------------------------------------------------
-# Add New SKU
-# ---------------------------------------------------------
-elif menu == "Add New SKU":
-    st.header("Add New SKU")
+# -----------------------------
+# ADD NEW SKU
+# -----------------------------
+if page == "Add New SKU":
+    st.header("Add New SKU to Master Inventory")
 
-    sku = st.text_input("SKU (Barcode Number)")
-    item_name = st.text_input("Item Name")
-    category = st.text_input("Category")
-    min_level = st.number_input("Min Level", min_value=0)
-    max_level = st.number_input("Max Level", min_value=0)
+    sku = st.text_input("SKU (auto-generate if left blank)")
+    name = st.text_input("Item Name")
+    barcode = st.text_input("Barcode (scan or type)")
+    category = st.selectbox("Category", CATEGORIES)
+    min_level = st.number_input("Minimum Level", min_value=0, step=1)
+    max_level = st.number_input("Maximum Level", min_value=0, step=1)
 
     if st.button("Add SKU"):
-        success, message = add_new_sku(sku, item_name, category, min_level, max_level)
-        st.success(message) if success else st.error(message)
+        if sku.strip() == "":
+            sku = str(uuid.uuid4())[:8]
 
-# ---------------------------------------------------------
-# Receive Inventory
-# ---------------------------------------------------------
-elif menu == "Receive Inventory":
-    st.header("Receive Inventory")
+        new_row = pd.DataFrame([{
+            "sku": sku,
+            "name": name,
+            "barcode": barcode,
+            "category": category,
+            "total_quantity": 0,
+            "min_level": min_level,
+            "max_level": max_level,
+        }])
 
-    barcode = st.text_input("Scan Barcode (SKU)")
-    qty_received = st.number_input("Quantity Received", min_value=1)
+        inventory = pd.concat([inventory, new_row], ignore_index=True)
+        save_inventory(inventory)
+        st.success(f"SKU '{sku}' added successfully.")
 
-    if st.button("Submit"):
-        success, message = receive_inventory(barcode, qty_received)
-        st.success(message) if success else st.error(message)
 
-# ---------------------------------------------------------
-# Use Inventory
-# ---------------------------------------------------------
-elif menu == "Use Inventory":
-    st.header("Use Inventory")
+# -----------------------------
+# RECEIVE INVENTORY
+# -----------------------------
+elif page == "Receive Inventory":
+    st.header("Receive Inventory — Add Stock to Existing SKU")
 
-    barcode = st.text_input("Scan Barcode (SKU)")
-    qty_used = st.number_input("Quantity Used", min_value=1)
+    sku = st.text_input("Enter SKU")
+    qty_received = st.number_input("Quantity Received", min_value=1, step=1)
 
-    if st.button("Submit"):
-        success, message = use_inventory(barcode, qty_used)
-        st.success(message) if success else st.error(message)
-
-# ---------------------------------------------------------
-# Receiving Log
-# ---------------------------------------------------------
-elif menu == "Receiving Log":
-    st.header("Receiving Log")
-    st.dataframe(load_receiving())
-
-# ---------------------------------------------------------
-# Usage Log
-# ---------------------------------------------------------
-elif menu == "Usage Log":
-    st.header("Usage Log")
-    st.dataframe(load_usage())
-
-# ---------------------------------------------------------
-# Barcode Scan Mode
-# ---------------------------------------------------------
-elif menu == "Barcode Scan Mode":
-    st.header("Live Barcode Scanning Mode")
-
-    st.write("Use your USB barcode scanner — it acts like a keyboard.")
-
-    scanned = st.text_input("Scan Barcode Here")
-
-    if scanned:
-        inventory = load_inventory()
-        if scanned in inventory["sku"].values:
-            item = inventory[inventory["sku"] == scanned].iloc[0]
-            st.success(f"Item Found: {item['item_name']} ({item['category']})")
-            st.write(f"Current Qty: {item['total_quantity']}")
+    if st.button("Submit Receipt"):
+        if sku not in inventory["sku"].values:
+            st.error("SKU not found in master inventory.")
         else:
-            st.error("Barcode not found in inventory.")
+            # Create receiving entry
+            item_number = len(receiving) + 1
+            date_received = datetime.now().strftime("%Y-%m-%d")
+
+            new_receipt = pd.DataFrame([{
+                "item_number": item_number,
+                "sku": sku,
+                "date_received": date_received,
+                "qty_received": qty_received
+            }])
+
+            receiving = pd.concat([receiving, new_receipt], ignore_index=True)
+            save_receiving(receiving)
+
+            # Update inventory total
+            idx = inventory[inventory["sku"] == sku].index[0]
+            inventory.at[idx, "total_quantity"] += qty_received
+            save_inventory(inventory)
+
+            st.success(f"Received {qty_received} units for SKU {sku}. Inventory updated.")
+
+
+# -----------------------------
+# LOOKUP / SCAN
+# -----------------------------
+elif page == "Lookup / Scan":
+    st.header("Lookup Item by Barcode or SKU")
+
+    lookup_value = st.text_input("Scan barcode or enter SKU")
+
+    if st.button("Search"):
+        result = inventory[
+            (inventory["barcode"] == lookup_value)
+            | (inventory["sku"] == lookup_value)
+        ]
+
+        if result.empty:
+            st.error("No item found.")
+        else:
+            st.success("Item found:")
+            st.dataframe(result)
+
+
+# -----------------------------
+# USE INVENTORY
+# -----------------------------
+elif page == "Use Inventory":
+    st.header("Use Inventory — Decrement Stock")
+
+    sku = st.text_input("Enter SKU")
+    qty_used = st.number_input("Quantity Used", min_value=1, step=1)
+
+    if st.button("Apply Usage"):
+        if sku not in inventory["sku"].values:
+            st.error("SKU not found.")
+        else:
+            idx = inventory[inventory["sku"] == sku].index[0]
+            current_qty = inventory.at[idx, "total_quantity"]
+
+            if qty_used > current_qty:
+                st.error("Not enough inventory to decrement.")
+            else:
+                inventory.at[idx, "total_quantity"] = current_qty - qty_used
+                save_inventory(inventory)
+                st.success(f"New quantity: {current_qty - qty_used}")
+
+                if inventory.at[idx, "total_quantity"] < inventory.at[idx, "min_level"]:
+                    st.warning("⚠ Item is now below minimum level!")
+
+
+# -----------------------------
+# CATEGORY FILTER
+# -----------------------------
+elif page == "Category Filter":
+    st.header("Filter by Category")
+
+    category = st.selectbox("Select Category", CATEGORIES)
+    filtered = inventory[inventory["category"] == category]
+
+    st.write(f"Items in category: **{category}**")
+    st.dataframe(filtered)
+
+
+# -----------------------------
+# LOW STOCK
+# -----------------------------
+elif page == "Low Stock":
+    st.header("Items Below Minimum Level")
+    low = inventory[inventory["total_quantity"] < inventory["min_level"]]
+    st.dataframe(low)
+
+
+# -----------------------------
+# OVERSTOCK
+# -----------------------------
+elif page == "Overstock":
+    st.header("Items Above Maximum Level")
+    over = inventory[inventory["total_quantity"] > inventory["max_level"]]
+    st.dataframe(over)
+
+
+# -----------------------------
+# INVENTORY TABLE
+# -----------------------------
+elif page == "Inventory Table":
+    st.header("Full Inventory Table")
+    st.dataframe(inventory)
+
+
+# -----------------------------
+# RECEIVING LOG
+# -----------------------------
+elif page == "Receiving Log":
+    st.header("Receiving Log — All Inventory Received")
+    st.dataframe(receiving)
+
+
+# -----------------------------
+# SUMMARY DASHBOARD
+# -----------------------------
+elif page == "Summary Dashboard":
+    st.header("Inventory Summary Dashboard")
+
+    total_skus = len(inventory)
+    low_stock = len(inventory[inventory["total_quantity"] < inventory["min_level"]])
+    overstock = len(inventory[inventory["total_quantity"] > inventory["max_level"]])
+
+    st.metric("Total SKUs", total_skus)
+    st.metric("Low Stock Items", low_stock)
+    st.metric("Overstock Items", overstock)
+
+    st.subheader("Category Breakdown")
+    category_counts = inventory["category"].value_counts()
+    st.bar_chart(category_counts)
