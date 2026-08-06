@@ -249,4 +249,65 @@ elif page == "Inventory Table":
 
 # -----------------------------
 # RECEIVING LOG
-# ----------------
+# -----------------------------
+elif page == "Receiving Log":
+    st.header("Receiving Log — All Inventory Received")
+    st.dataframe(receiving)
+
+
+# -----------------------------
+# REMOVE DUPLICATES (MANUAL DELETE)
+# -----------------------------
+elif page == "Remove Duplicates":
+    st.header("Remove Duplicate Inventory Items")
+
+    st.write("Select specific duplicate rows to delete.")
+
+    dup_rows = inventory[
+        inventory.duplicated(subset=["sku", "name", "barcode"], keep=False)
+    ]
+
+    if dup_rows.empty:
+        st.success("No duplicates found!")
+        st.stop()
+
+    st.subheader("Duplicate Rows Found")
+    st.dataframe(dup_rows)
+
+    delete_options = dup_rows.index.tolist()
+    rows_to_delete = st.multiselect(
+        "Select rows to delete:",
+        delete_options,
+        format_func=lambda x: f"Row {x} — SKU: {inventory.at[x, 'sku']} | Name: {inventory.at[x, 'name']}"
+    )
+
+    if st.button("Delete Selected Rows"):
+        if len(rows_to_delete) == 0:
+            st.error("No rows selected.")
+        else:
+            inventory_clean = inventory.drop(rows_to_delete)
+            save_inventory(inventory_clean)
+            inventory = inventory_clean
+
+            st.success(f"Deleted {len(rows_to_delete)} duplicate rows successfully!")
+            st.dataframe(inventory)
+
+
+# -----------------------------
+# SUMMARY DASHBOARD
+# -----------------------------
+elif page == "Summary Dashboard":
+    st.header("Inventory Summary Dashboard")
+
+    total_skus = len(inventory)
+    low_stock = len(inventory[inventory["total_quantity"] < inventory["min_level"]])
+    overstock = len(inventory[inventory["total_quantity"] > inventory["max_level"]])
+
+    st.metric("Total SKUs", total_skus)
+    st.metric("Low Stock Items", low_stock)
+    st.metric("Overstock Items", overstock)
+
+    st.subheader("Category Breakdown")
+    category_counts = inventory["category"].value_counts()
+    st.bar_chart(category_counts)
+
